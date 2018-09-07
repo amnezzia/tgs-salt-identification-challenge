@@ -751,6 +751,23 @@ class Trainer(object):
             else:
                 self.lr_schedule.step()
 
-
-def bag_net_inits():
-    pass
+    def bag_net_inits(self):
+        """Try several inits and select one with highest given metric on val set"""
+        if self.curr_epoch == 0:
+            print("trying out different inits")
+            self.model.eval()
+            results = []
+            for try_i in range(10):
+                self.model.reset_parameters()
+                self.validate_epoch()
+                self.model.to('cpu')
+                results.append({
+                    'metric': self.val_metrics[self.lr_metric].get_last_epoch_mean(),
+                    'model_state': self.model.state_dict()
+                })
+                self.val_metrics[self.lr_metric].reset()
+                self.model.to(self.device)
+            best = np.argmax([r['metric'] for r in results])
+            self.model.to('cpu')
+            self.model.load_state_dict(results[best]['model_state'])
+            self.model.to(self.device)
