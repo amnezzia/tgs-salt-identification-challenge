@@ -20,7 +20,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from torch.utils.data.dataset import Dataset, Subset
-from torch.utils.data.dataloader import default_collate, DataLoader
+from torch.utils.data.dataloader import DataLoader
 
 from tqdm import tqdm
 import time
@@ -283,6 +283,23 @@ class Experiment(object):
         val_metrics = {name:FnValueTracker(fn) for name, fn in self.val_metrics.items()}
         return train_metrics, val_metrics
 
+    def _make_optimizer(self, m):
+        """helper method to instantiate an optimizer with optionally
+        different learning ates for different param groups in the net"""
+        # set different learning rates for different params if possible
+        if hasattr(m, 'parameter_named_groups') and isinstance(self.opt_params['lr'], dict):
+            lrs = self.opt_params['lr']
+            other_opt_params = {k:v for k,v in self.opt_params.items() if k != 'lr'}
+            m_params = [{'params': params, 'lr': lrs[p_name]}
+                        for p_name, params in m.parameter_named_groups().items()]
+            opt = self.OptClass(m_params, **other_opt_params)
+        else:
+            opt = self.OptClass(m.parameters(), **self.opt_params)
+
+        # learning rate schedule (TODO: make an object to encapsulate optimizer and lr schedule)
+        lr_sch = None if self.LrSchClass is None else self.LrSchClass(opt, **self.lr_sch_params)
+        return opt, lr_sch
+
     def run(self, fold_num:int=None, use_checkpoint:bool=False):
         """
         Main method to run an experiment
@@ -305,8 +322,7 @@ class Experiment(object):
 
             # instantiate Net model, optimizer, and maybe learning rate scheduler
             m = self.ModelClass(**self.model_params).to(self.device)
-            opt = self.OptClass(m.parameters(), **self.opt_params)
-            lr_sch = None if self.LrSchClass is None else self.LrSchClass(opt, **self.lr_sch_params)
+            opt, lr_sch = self._make_optimizer(m)
 
             train_metrics, val_metrics = self._make_metric_trackers()
 
@@ -750,24 +766,3 @@ class Trainer(object):
                 self.lr_schedule.step(val)
             else:
                 self.lr_schedule.step()
-
-    def bag_net_inits(self):
-        """Try several inits and select one with highest given metric on val set"""
-        if self.curr_epoch == 0:
-            print("trying out different inits")
-            self.model.eval()
-            results = []
-            for try_i in range(10):
-                self.model.reset_parameters()
-                self.validate_epoch()
-                self.model.to('cpu')
-                results.append({
-                    'metric': self.val_metrics[self.lr_metric].get_last_epoch_mean(),
-                    'model_state': self.model.state_dict()
-                })
-                self.val_metrics[self.lr_metric].reset()
-                self.model.to(self.device)
-            best = np.argmax([r['metric'] for r in results])
-            self.model.to('cpu')
-            self.model.load_state_dict(results[best]['model_state'])
-            self.model.to(self.device)
