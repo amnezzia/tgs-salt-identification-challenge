@@ -3,8 +3,10 @@ import torchvision as tv
 import torch.nn.functional as F
 import torch.nn as nn
 
+from collections import OrderedDict
+
 from net_utils import DownMatchingCat, BasicBlock, DecoderBlockV0, DecoderBlockV1, BlockV0, \
-    CenterBlockV1, FinalBlockV1, depth_to_space, DecoderBlockGatedV1
+    CenterBlockV1, FinalBlockV1, depth_to_space, DecoderBlockGatedV1, ShortcutDown
 
 
 class MyResNetV0(nn.Module):
@@ -428,9 +430,19 @@ class MyResNetV3(nn.Module):
                 for layer in [self.layer0, self.layer1, self.layer2, self.layer3, self.layer4]
                 for p in layer.parameters())
 
-    def other_pararemters(self):
+    def decoder_pararemters(self):
         return (p
-                for layer in [self.incoming_layer, self.center, self.final,
-                              self.dec0, self.dec1, self.dec2, self.dec3, self.dec4]
+                for layer in [self.center, self.final, self.dec0, self.dec1, self.dec2, self.dec3, self.dec4]
                 for p in layer.parameters())
 
+    def parameter_named_groups(self):
+        """
+        give different groups of parameters different names so can set different learning rates
+
+        Although that does not work for this competition
+        """
+        return {
+            'incoming': self.incoming_layer.parameters(),
+            'encoder': self.encoder_pararemters(),
+            'decoder': self.decoder_pararemters(),
+        }
