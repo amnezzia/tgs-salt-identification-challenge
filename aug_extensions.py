@@ -226,7 +226,7 @@ class FFTMask(iaa.Augmenter):
         images = np.real(images_arr)
         images_min = images.min(axis=1, keepdims=1).min(axis=2, keepdims=1)
         images_max = images.max(axis=1, keepdims=1).max(axis=2, keepdims=1)
-        images = (images - images_min) / (images_max - images_min)
+        images = (images - images_min) / (images_max - images_min + 0.001)
         images = (images * 255).astype(np.uint8)
         return images
 
